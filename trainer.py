@@ -211,7 +211,7 @@ def train(train_loader, model, criterion, optimizer, epoch, noise_sd):
                       epoch, i, len(train_loader), batch_time=batch_time,
                       data_time=data_time, loss=losses, top1=top1))
 
-    print(' * Test Acc@1 {top1.avg:.3f}'
+    print(' * Train Acc@1 {top1.avg:.3f}'
           .format(top1=top1))
 
 
