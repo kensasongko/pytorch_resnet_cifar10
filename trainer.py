@@ -52,11 +52,11 @@ parser.add_argument('--save-dir', dest='save_dir',
 parser.add_argument('--save-every', dest='save_every',
                     help='Saves checkpoints at every specified number of epochs',
                     type=int, default=10)
-best_prec1 = 0
+best_acc1 = 0
 
 
 def main():
-    global args, best_prec1
+    global args, best_acc1_
     args = parser.parse_args()
 
 
@@ -73,7 +73,7 @@ def main():
             print("=> loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
             args.start_epoch = checkpoint['epoch']
-            best_prec1 = checkpoint['best_prec1']
+            best_acc1 = checkpoint['best_acc1']
             model.load_state_dict(checkpoint['state_dict'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.evaluate, checkpoint['epoch']))
@@ -135,22 +135,22 @@ def main():
         lr_scheduler.step()
 
         # evaluate on validation set
-        prec1 = validate(val_loader, model, criterion)
+        acc1 = validate(val_loader, model, criterion)
 
-        # remember best prec@1 and save checkpoint
-        is_best = prec1 > best_prec1
-        best_prec1 = max(prec1, best_prec1)
+        # remember best acc@1 and save checkpoint
+        is_best = acc1 > best_acc1
+        best_acc1 = max(acc1, best_acc1)
 
         if epoch > 0 and epoch % args.save_every == 0:
             save_checkpoint({
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
-                'best_prec1': best_prec1,
+                'best_acc1': best_acc1,
             }, is_best, filename=os.path.join(args.save_dir, 'checkpoint.th'))
 
     save_checkpoint({
         'state_dict': model.state_dict(),
-        'best_prec1': best_prec1,
+        'best_acc1': best_acc1,
     }, is_best, filename=os.path.join(args.save_dir, 'model.th'))
 
 
@@ -167,32 +167,31 @@ def train(train_loader, model, criterion, optimizer, epoch):
     model.train()
 
     end = time.time()
-    for i, (input, target) in enumerate(train_loader):
+    for i, (inputs, targets) in enumerate(train_loader):
 
         # measure data loading time
         data_time.update(time.time() - end)
 
-        target = target.cuda(async=True)
-        input_var = torch.autograd.Variable(input).cuda()
-        target_var = torch.autograd.Variable(target)
+        targets = targets.cuda()
+        inputs = inputs.cuda()
         if args.half:
-            input_var = input_var.half()
+            inputs = inputs.half()
 
         # compute output
-        output = model(input_var)
-        loss = criterion(output, target_var)
+        outputs = model(inputs)
+        loss = criterion(outputs, targets)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        output = output.float()
+        outputs = outputs.float()
         loss = loss.float()
         # measure accuracy and record loss
-        prec1 = accuracy(output.data, target)[0]
-        losses.update(loss.item(), input.size(0))
-        top1.update(prec1.item(), input.size(0))
+        acc1 = accuracy(outputs.data, targets)[0]
+        losses.update(loss.item(), inputs.size(0))
+        top1.update(acc1.item(), inputs.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -203,9 +202,12 @@ def train(train_loader, model, criterion, optimizer, epoch):
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
+                  'Acc@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
                       epoch, i, len(train_loader), batch_time=batch_time,
                       data_time=data_time, loss=losses, top1=top1))
+
+    print(' * Test Acc@1 {top1.avg:.3f}'
+          .format(top1=top1))
 
 
 def validate(val_loader, model, criterion):
@@ -220,39 +222,39 @@ def validate(val_loader, model, criterion):
     model.eval()
 
     end = time.time()
-    for i, (input, target) in enumerate(val_loader):
-        target = target.cuda(async=True)
-        input_var = torch.autograd.Variable(input, volatile=True).cuda()
-        target_var = torch.autograd.Variable(target, volatile=True)
+    with torch.no_grad():
+        for i, (inputs, targets) in enumerate(val_loader):
+            targets = targets.cuda()
+            inputs = inputs.cuda()
 
-        if args.half:
-            input_var = input_var.half()
+            if args.half:
+                inputs = inputs.half()
 
-        # compute output
-        output = model(input_var)
-        loss = criterion(output, target_var)
+            # compute output
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
 
-        output = output.float()
-        loss = loss.float()
+            outputs = outputs.float()
+            loss = loss.float()
 
-        # measure accuracy and record loss
-        prec1 = accuracy(output.data, target)[0]
-        losses.update(loss.item(), input.size(0))
-        top1.update(prec1.item(), input.size(0))
+            # measure accuracy and record loss
+            acc1 = accuracy(outputs.data, targets)[0]
+            losses.update(loss.item(), inputs.size(0))
+            top1.update(acc1.item(), inputs.size(0))
 
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
 
-        if i % args.print_freq == 0:
-            print('Test: [{0}/{1}]\t'
-                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
-                      i, len(val_loader), batch_time=batch_time, loss=losses,
-                      top1=top1))
+            if i % args.print_freq == 0:
+                print('Test: [{0}/{1}]\t'
+                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                      'Acc@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
+                          i, len(val_loader), batch_time=batch_time, loss=losses,
+                          top1=top1))
 
-    print(' * Prec@1 {top1.avg:.3f}'
+    print(' * Test Acc@1 {top1.avg:.3f}'
           .format(top1=top1))
 
     return top1.avg
@@ -282,7 +284,7 @@ class AverageMeter(object):
 
 
 def accuracy(output, target, topk=(1,)):
-    """Computes the precision@k for the specified values of k"""
+    """Computes the accuracy@k for the specified values of k"""
     maxk = max(topk)
     batch_size = target.size(0)
 
