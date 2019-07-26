@@ -52,11 +52,13 @@ parser.add_argument('--save-dir', dest='save_dir',
 parser.add_argument('--save-every', dest='save_every',
                     help='Saves checkpoints at every specified number of epochs',
                     type=int, default=10)
+parser.add_argument('--noise-sd', default=0.00, type=float,
+                    help='Standard deviation of gaussian noise for data augmentation (default: 0.00')
 best_acc1 = 0
 
 
 def main():
-    global args, best_acc1_
+    global args, best_acc1
     args = parser.parse_args()
 
 
@@ -131,7 +133,7 @@ def main():
 
         # train for one epoch
         print('current lr {:.5e}'.format(optimizer.param_groups[0]['lr']))
-        train(train_loader, model, criterion, optimizer, epoch)
+        train(train_loader, model, criterion, optimizer, epoch, args.noise_sd)
         lr_scheduler.step()
 
         # evaluate on validation set
@@ -154,7 +156,7 @@ def main():
     }, is_best, filename=os.path.join(args.save_dir, 'model.th'))
 
 
-def train(train_loader, model, criterion, optimizer, epoch):
+def train(train_loader, model, criterion, optimizer, epoch, noise_sd):
     """
         Run one train epoch
     """
@@ -174,6 +176,9 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
         targets = targets.cuda()
         inputs = inputs.cuda()
+
+        # augment inputs with noise
+        inputs = inputs + torch.randn_like(inputs, device='cuda') * noise_sd
         if args.half:
             inputs = inputs.half()
 
